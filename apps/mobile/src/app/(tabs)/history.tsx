@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/services/api';
@@ -12,15 +13,25 @@ import {
 import { colors, spacing } from '@/theme';
 
 export default function HistoryScreen() {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const {
     data: transactions,
     isLoading,
-    isFetching,
     refetch,
   } = useQuery({
     queryKey: ['transactions'],
     queryFn: () => apiClient.getTransactionHistory(),
   });
+
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refetch]);
 
   if (isLoading) {
     return (
@@ -76,8 +87,8 @@ export default function HistoryScreen() {
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
-            refreshing={isFetching && !isLoading}
-            onRefresh={refetch}
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
             tintColor={colors.primary}
           />
         }

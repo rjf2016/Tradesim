@@ -139,25 +139,20 @@ export default function StockDetailScreen() {
   });
 
   const watchlistMutation = useMutation({
-    mutationFn: async () => {
-      // Check current state at mutation time, not render time
-      const currentWatchlist = queryClient.getQueryData<any[]>(['watchlist']);
-      const currentlyInWatchlist = currentWatchlist?.some((w) => w.symbol === symbol);
-
-      return currentlyInWatchlist
+    mutationFn: async (action: 'add' | 'remove') => {
+      return action === 'remove'
         ? apiClient.removeFromWatchlist(symbol!)
         : apiClient.addToWatchlist(symbol!);
     },
-    onMutate: async () => {
+    onMutate: async (action) => {
       if (!symbol) return;
       await queryClient.cancelQueries({ queryKey: ['watchlist'] });
       const previous = queryClient.getQueryData<any[]>(['watchlist']);
 
       queryClient.setQueryData<any[]>(['watchlist'], (current) => {
         const list = current ?? [];
-        const exists = list.some((w) => w.symbol === symbol);
 
-        if (exists) {
+        if (action === 'remove') {
           return list.filter((w) => w.symbol !== symbol);
         }
 
@@ -251,7 +246,7 @@ export default function StockDetailScreen() {
           </View>
           <TouchableOpacity
             style={styles.watchlistButton}
-            onPress={() => watchlistMutation.mutate()}
+            onPress={() => watchlistMutation.mutate(isInWatchlist ? 'remove' : 'add')}
           >
             <Ionicons
               name={isInWatchlist ? 'star' : 'star-outline'}
