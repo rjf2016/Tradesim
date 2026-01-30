@@ -31,15 +31,52 @@ export const MOCK_STOCKS: MockStock[] = [
   { symbol: 'CRM', name: 'Salesforce Inc.', basePrice: 272.15, volatility: 0.024 },
 ];
 
-// Generate a deterministic but varying price based on symbol and time
-function generatePrice(stock: MockStock, seed?: number): number {
-  const now = seed ?? Date.now();
-  // Use a simple hash of time to create price variation
-  const hourOfDay = Math.floor(now / (1000 * 60 * 60)) % 24;
-  const dayOfYear = Math.floor(now / (1000 * 60 * 60 * 24)) % 365;
+// Simple hash function to create a unique seed from a string
+function hashCode(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash);
+}
 
-  // Create a pseudo-random variation based on time
-  const variation = Math.sin(hourOfDay * 0.5 + dayOfYear * 0.1) * stock.volatility;
+// Seeded random number generator for consistent but unique patterns per stock
+function seededRandom(seed: number): number {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+}
+
+// Generate a deterministic but varying price based on symbol and time
+function generatePrice(stock: MockStock, timestamp?: number): number {
+  const now = timestamp ?? Date.now();
+  const symbolSeed = hashCode(stock.symbol);
+
+  // Create multiple wave components for more realistic movement
+  const hourOfDay = Math.floor(now / (1000 * 60 * 60));
+  const dayFraction = (now % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60 * 24);
+
+  // Use symbol seed to create unique phase offsets and frequencies
+  const phase1 = (symbolSeed % 100) / 10;
+  const phase2 = (symbolSeed % 50) / 5;
+  const phase3 = (symbolSeed % 25) / 2.5;
+  const freq1 = 0.3 + (symbolSeed % 10) / 20;
+  const freq2 = 0.7 + (symbolSeed % 15) / 15;
+  const freq3 = 1.5 + (symbolSeed % 20) / 10;
+
+  // Combine multiple sine waves with different frequencies for realistic movement
+  const wave1 = Math.sin(hourOfDay * freq1 + phase1) * 0.4;
+  const wave2 = Math.sin(hourOfDay * freq2 + phase2) * 0.3;
+  const wave3 = Math.sin(hourOfDay * freq3 + phase3) * 0.2;
+  const noise = seededRandom(hourOfDay + symbolSeed) * 0.2 - 0.1;
+
+  // Add a trend component based on symbol
+  const trendDirection = (symbolSeed % 3) - 1; // -1, 0, or 1
+  const daysSinceEpoch = Math.floor(now / (1000 * 60 * 60 * 24));
+  const trend = trendDirection * (daysSinceEpoch % 30) * 0.001;
+
+  const variation = (wave1 + wave2 + wave3 + noise + trend) * stock.volatility;
   const price = stock.basePrice * (1 + variation);
 
   return Math.round(price * 100) / 100;
@@ -65,8 +102,8 @@ export function getMockQuote(symbol: string) {
     const unknownStock: MockStock = {
       symbol: symbol.toUpperCase(),
       name: `${symbol.toUpperCase()} Corp.`,
-      basePrice: 50 + Math.random() * 200,
-      volatility: 0.02,
+      basePrice: 50 + hashCode(symbol) % 200,
+      volatility: 0.02 + (hashCode(symbol) % 20) / 1000,
     };
     return generateMockQuote(unknownStock);
   }
@@ -90,7 +127,7 @@ function generateMockQuote(stock: MockStock) {
     low: Math.round(low * 100) / 100,
     open: Math.round((price - change * 0.3) * 100) / 100,
     previousClose: Math.round((price - change) * 100) / 100,
-    volume: Math.floor(10000000 + Math.random() * 50000000),
+    volume: Math.floor(10000000 + seededRandom(hashCode(stock.symbol) + Date.now() / 100000) * 50000000),
   };
 }
 
@@ -112,28 +149,68 @@ export function getMockHistory(symbol: string, days = 30) {
   const stock = MOCK_STOCKS.find(s => s.symbol === symbol.toUpperCase()) ?? {
     symbol: symbol.toUpperCase(),
     name: `${symbol.toUpperCase()} Corp.`,
-    basePrice: 100,
-    volatility: 0.02,
+    basePrice: 100 + hashCode(symbol) % 100,
+    volatility: 0.02 + (hashCode(symbol) % 20) / 1000,
   };
 
   const history = [];
   const now = Date.now();
+  const symbolSeed = hashCode(stock.symbol);
 
-  for (let i = days - 1; i >= 0; i--) {
+  // Generate intraday data for today (hourly points for the last 24 hours)
+  const hoursToGenerate = 24;
+  for (let h = hoursToGenerate - 1; h >= 0; h--) {
+    const timestamp = now - h * 60 * 60 * 1000;
+    const date = new Date(timestamp);
+    const dateStr = date.toISOString();
+
+    // Generate price with hourly variation
+    const hourSeed = symbolSeed + Math.floor(timestamp / (60 * 60 * 1000));
+    const basePrice = generatePrice(stock, timestamp);
+    const hourlyNoise = (seededRandom(hourSeed) - 0.5) * stock.volatility * 0.3;
+    const price = Math.round(basePrice * (1 + hourlyNoise) * 100) / 100;
+
+    history.push({
+      date: dateStr,
+      open: price,
+      high: price,
+      low: price,
+      close: price,
+      price: price,
+      volume: Math.floor(1000000 + seededRandom(hourSeed) * 5000000),
+    });
+  }
+
+  // Generate daily data for previous days
+  for (let i = days - 1; i >= 1; i--) {
     const timestamp = now - i * 24 * 60 * 60 * 1000;
     const date = new Date(timestamp).toISOString().split('T')[0];
-    const price = generatePrice(stock, timestamp);
-    const dayVolatility = stock.volatility * 0.5;
+    const closePrice = generatePrice(stock, timestamp);
+
+    // Generate intraday variation that's unique per stock and day
+    const daySeed = symbolSeed + i;
+    const intradayVariation = stock.volatility * 0.5;
+    const openOffset = (seededRandom(daySeed) - 0.5) * intradayVariation;
+    const highOffset = seededRandom(daySeed + 1) * intradayVariation;
+    const lowOffset = seededRandom(daySeed + 2) * intradayVariation;
+
+    const open = closePrice * (1 + openOffset);
+    const high = Math.max(open, closePrice) * (1 + highOffset);
+    const low = Math.min(open, closePrice) * (1 - lowOffset);
 
     history.push({
       date,
-      open: Math.round(price * (1 - dayVolatility * 0.3) * 100) / 100,
-      high: Math.round(price * (1 + dayVolatility) * 100) / 100,
-      low: Math.round(price * (1 - dayVolatility) * 100) / 100,
-      close: price,
-      volume: Math.floor(10000000 + Math.random() * 50000000),
+      open: Math.round(open * 100) / 100,
+      high: Math.round(high * 100) / 100,
+      low: Math.round(low * 100) / 100,
+      close: closePrice,
+      price: closePrice,
+      volume: Math.floor(10000000 + seededRandom(daySeed + 3) * 50000000),
     });
   }
+
+  // Sort by date ascending
+  history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   return history;
 }

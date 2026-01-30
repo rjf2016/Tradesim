@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,23 +9,88 @@ import {
   Keyboard,
   Platform,
 } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams, router, useNavigation } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { LineChart } from 'react-native-gifted-charts';
 import { apiClient } from '@/services/api';
 import { formatCurrency } from '@/utils/format';
-import { Container, Card, Button, Input, SkeletonStockDetail } from '@/components';
+import {
+  Container,
+  Card,
+  Button,
+  Input,
+  SkeletonStockDetail,
+  StockChart,
+  TimePeriod,
+} from '@/components';
 import { colors, spacing, borderRadius } from '@/theme';
 
 type TradeType = 'buy' | 'sell';
 
+// Filter data based on selected time period
+function filterDataByPeriod(
+  data: Array<{ date: string; price: number }>,
+  period: TimePeriod,
+): Array<{ date: string; price: number }> {
+  if (!data || data.length === 0) return [];
+
+  const now = new Date();
+  let cutoffDate: Date;
+
+  switch (period) {
+    case '1D':
+      cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      break;
+    case '1W':
+      cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      break;
+    case '1M':
+      cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      break;
+    case '3M':
+      cutoffDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      break;
+    case '6M':
+      cutoffDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+      break;
+    case '1Y':
+      cutoffDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      break;
+    case 'ALL':
+    default:
+      return data;
+  }
+
+  const filtered = data.filter((point) => new Date(point.date) >= cutoffDate);
+
+  // If we have very few points after filtering, return more data for a better chart
+  if (filtered.length < 5 && data.length >= 5) {
+    return data.slice(-Math.min(30, data.length));
+  }
+
+  return filtered.length > 0 ? filtered : data;
+}
+
 export default function StockDetailScreen() {
   const { symbol } = useLocalSearchParams<{ symbol: string }>();
+  const navigation = useNavigation();
   const queryClient = useQueryClient();
   const scrollViewRef = useRef<ScrollView>(null);
   const [tradeType, setTradeType] = useState<TradeType>('buy');
   const [quantity, setQuantity] = useState('');
+  const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('1M');
+  const [isChartScrubbing, setIsChartScrubbing] = useState(false);
+
+  // Disable modal gesture while scrubbing the chart
+  const handleScrubStart = useCallback(() => {
+    setIsChartScrubbing(true);
+    navigation.setOptions({ gestureEnabled: false });
+  }, [navigation]);
+
+  const handleScrubEnd = useCallback(() => {
+    setIsChartScrubbing(false);
+    navigation.setOptions({ gestureEnabled: true });
+  }, [navigation]);
 
   const [scrollViewHeight, setScrollViewHeight] = useState(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -114,6 +179,16 @@ export default function StockDetailScreen() {
   const isInWatchlist = watchlist?.some((w) => w.symbol === symbol);
   const holding = portfolio?.holdings.find((h) => h.symbol === symbol);
 
+  // Transform and filter chart data
+  const chartData = useMemo(() => {
+    if (!history) return [];
+    const transformed = history.map((point) => ({
+      date: point.date,
+      price: point.price,
+    }));
+    return filterDataByPeriod(transformed, selectedPeriod);
+  }, [history, selectedPeriod]);
+
   const tradeMutation = useMutation({
     mutationFn: (data: {
       type: TradeType;
@@ -130,7 +205,7 @@ export default function StockDetailScreen() {
       Alert.alert(
         'Success',
         `${tradeType === 'buy' ? 'Bought' : 'Sold'} ${quantity} shares of ${symbol}`,
-        [{ text: 'OK', onPress: () => router.back() }],
+        [{ text: 'OK', onPress: () => router.replace('/(tabs)') }],
       );
     },
     onError: (error: Error) => {
@@ -139,25 +214,20 @@ export default function StockDetailScreen() {
   });
 
   const watchlistMutation = useMutation({
-    mutationFn: async () => {
-      // Check current state at mutation time, not render time
-      const currentWatchlist = queryClient.getQueryData<any[]>(['watchlist']);
-      const currentlyInWatchlist = currentWatchlist?.some((w) => w.symbol === symbol);
-
-      return currentlyInWatchlist
+    mutationFn: async (action: 'add' | 'remove') => {
+      return action === 'remove'
         ? apiClient.removeFromWatchlist(symbol!)
         : apiClient.addToWatchlist(symbol!);
     },
-    onMutate: async () => {
+    onMutate: async (action) => {
       if (!symbol) return;
       await queryClient.cancelQueries({ queryKey: ['watchlist'] });
       const previous = queryClient.getQueryData<any[]>(['watchlist']);
 
       queryClient.setQueryData<any[]>(['watchlist'], (current) => {
         const list = current ?? [];
-        const exists = list.some((w) => w.symbol === symbol);
 
-        if (exists) {
+        if (action === 'remove') {
           return list.filter((w) => w.symbol !== symbol);
         }
 
@@ -209,15 +279,22 @@ export default function StockDetailScreen() {
   };
 
   const totalCost = (parseInt(quantity, 10) || 0) * (quote?.price ?? 0);
-  const chartData =
-    history?.map((point) => ({
-      value: point.price,
-      label: point.date,
-    })) ?? [];
+  const parsedQuantity = parseInt(quantity, 10) || 0;
+
+  // Validation states
+  const exceedsBuyingPower =
+    tradeType === 'buy' &&
+    totalCost > (portfolio?.cashBalance ?? 0) &&
+    parsedQuantity > 0;
+  const exceedsShares =
+    tradeType === 'sell' &&
+    parsedQuantity > (holding?.quantity ?? 0) &&
+    parsedQuantity > 0;
+  const hasValidationError = exceedsBuyingPower || exceedsShares;
 
   if (quoteLoading) {
     return (
-      <Container>
+      <Container safeArea={false}>
         <ScrollView contentContainerStyle={styles.content}>
           <SkeletonStockDetail />
         </ScrollView>
@@ -226,13 +303,13 @@ export default function StockDetailScreen() {
   }
 
   return (
-    <Container>
+    <Container safeArea={false} style={{ paddingTop: 12 }}>
       <ScrollView
         ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={[
           styles.content,
-          { paddingBottom: spacing.xxxl + (keyboardHeight || 0) },
+          { paddingBottom: spacing.xl + (keyboardHeight || 0) },
         ]}
         contentInset={
           Platform.OS === 'ios' ? { bottom: keyboardHeight } : undefined
@@ -241,6 +318,7 @@ export default function StockDetailScreen() {
           Platform.OS === 'ios' ? { bottom: keyboardHeight } : undefined
         }
         keyboardShouldPersistTaps="handled"
+        scrollEnabled={!isChartScrubbing}
         onLayout={(e) => setScrollViewHeight(e.nativeEvent.layout.height)}
       >
         {/* Header */}
@@ -251,7 +329,9 @@ export default function StockDetailScreen() {
           </View>
           <TouchableOpacity
             style={styles.watchlistButton}
-            onPress={() => watchlistMutation.mutate()}
+            onPress={() =>
+              watchlistMutation.mutate(isInWatchlist ? 'remove' : 'add')
+            }
           >
             <Ionicons
               name={isInWatchlist ? 'star' : 'star-outline'}
@@ -261,44 +341,17 @@ export default function StockDetailScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Price */}
-        <View style={styles.priceSection}>
-          <Text style={styles.price}>{formatCurrency(quote?.price ?? 0)}</Text>
-          <Text
-            style={[
-              styles.change,
-              (quote?.changePercent ?? 0) >= 0
-                ? styles.positive
-                : styles.negative,
-            ]}
-          >
-            {(quote?.changePercent ?? 0) >= 0 ? '+' : ''}
-            {formatCurrency(quote?.change ?? 0)} (
-            {(quote?.changePercent ?? 0).toFixed(2)}%)
-          </Text>
-        </View>
-
-        {/* Chart */}
-        {chartData.length > 0 && (
-          <View style={styles.chartContainer}>
-            <LineChart
-              data={chartData}
-              width={320}
-              height={200}
-              color={colors.primary}
-              thickness={2}
-              hideDataPoints
-              hideYAxisText
-              hideAxesAndRules
-              curved
-              areaChart
-              startFillColor={colors.primary}
-              startOpacity={0.4}
-              endFillColor={colors.primary}
-              endOpacity={0.1}
-            />
-          </View>
-        )}
+        {/* Interactive Chart with Price Display */}
+        <StockChart
+          data={chartData}
+          currentPrice={quote?.price ?? 0}
+          previousClose={quote?.previousClose}
+          selectedPeriod={selectedPeriod}
+          onPeriodChange={setSelectedPeriod}
+          onScrubStart={handleScrubStart}
+          onScrubEnd={handleScrubEnd}
+          height={220}
+        />
 
         {/* Holdings Info */}
         {holding && (
@@ -330,8 +383,7 @@ export default function StockDetailScreen() {
               >
                 {holding.gainLoss >= 0 ? '+' : ''}
                 {formatCurrency(holding.gainLoss)} (
-                {holding.gainLossPercent.toFixed(2)}
-                %)
+                {holding.gainLossPercent.toFixed(2)}%)
               </Text>
             </View>
           </Card>
@@ -353,7 +405,10 @@ export default function StockDetailScreen() {
                 styles.toggleButton,
                 tradeType === 'buy' && styles.toggleButtonActive,
               ]}
-              onPress={() => setTradeType('buy')}
+              onPress={() => {
+                setTradeType('buy');
+                setQuantity('');
+              }}
             >
               <Text
                 style={[
@@ -369,7 +424,10 @@ export default function StockDetailScreen() {
                 styles.toggleButton,
                 tradeType === 'sell' && styles.toggleButtonActiveSell,
               ]}
-              onPress={() => setTradeType('sell')}
+              onPress={() => {
+                setTradeType('sell');
+                setQuantity('');
+              }}
               disabled={!holding}
             >
               <Text
@@ -390,9 +448,15 @@ export default function StockDetailScreen() {
               style={styles.quantityInput}
               variant="large"
               value={quantity}
-              onChangeText={setQuantity}
+              onChangeText={(text) => {
+                const numeric = text.replace(/[^0-9]/g, '');
+                if (numeric === '' || parseInt(numeric, 10) <= 9999999) {
+                  setQuantity(numeric);
+                }
+              }}
               keyboardType="number-pad"
               placeholder="0"
+              maxLength={7}
               onFocus={() => {
                 setIsQuantityFocused(true);
                 requestAnimationFrame(() => scrollTradeSectionFullyIntoView());
@@ -405,12 +469,37 @@ export default function StockDetailScreen() {
             <Text style={styles.totalLabel}>
               Estimated {tradeType === 'buy' ? 'Cost' : 'Credit'}
             </Text>
-            <Text style={styles.totalValue}>{formatCurrency(totalCost)}</Text>
+            <Text
+              style={[styles.totalValue]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+            >
+              {formatCurrency(totalCost)}
+            </Text>
           </View>
 
+          {/* Buying power (only show when no error) */}
           {tradeType === 'buy' && (
-            <Text style={styles.buyingPower}>
+            <Text
+              style={[
+                styles.buyingPower,
+                hasValidationError && styles.validationError,
+              ]}
+            >
               Buying Power: {formatCurrency(portfolio?.cashBalance ?? 0)}
+            </Text>
+          )}
+
+          {/* Available shares for selling */}
+          {tradeType === 'sell' && holding && (
+            <Text
+              style={[
+                styles.buyingPower,
+                hasValidationError && styles.validationError,
+              ]}
+            >
+              Available: {holding.quantity} shares
             </Text>
           )}
 
@@ -420,6 +509,7 @@ export default function StockDetailScreen() {
             size="lg"
             onPress={handleTrade}
             loading={tradeMutation.isPending}
+            disabled={hasValidationError || parsedQuantity === 0}
             style={styles.tradeButton}
           />
         </Card>
@@ -439,33 +529,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.sm,
   },
   symbol: {
     color: colors.text,
-    fontSize: 32,
+    fontSize: 26,
     fontWeight: '700',
   },
   companyName: {
     color: colors.textSecondary,
-    fontSize: 16,
+    fontSize: 14,
     marginTop: spacing.xs,
   },
   watchlistButton: {
     padding: spacing.sm,
-  },
-  priceSection: {
-    marginBottom: spacing.xl,
-  },
-  price: {
-    color: colors.text,
-    fontSize: 42,
-    fontWeight: '700',
-  },
-  change: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: spacing.xs,
   },
   positive: {
     color: colors.success,
@@ -473,13 +550,8 @@ const styles = StyleSheet.create({
   negative: {
     color: colors.error,
   },
-  chartContainer: {
-    marginBottom: spacing.xl,
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-  },
   holdingCard: {
-    marginBottom: spacing.xl,
+    marginTop: spacing.lg,
   },
   holdingTitle: {
     color: colors.text,
@@ -502,19 +574,20 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   tradeSection: {
+    marginTop: spacing.lg,
     padding: spacing.lg,
   },
   tradeToggle: {
     flexDirection: 'row',
     backgroundColor: colors.background,
-    borderRadius: borderRadius.md,
-    padding: spacing.xs,
-    marginBottom: spacing.lg,
+    borderRadius: borderRadius.lg,
+    padding: 2,
+    marginBottom: spacing.md,
   },
   toggleButton: {
     flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
     alignItems: 'center',
   },
   toggleButtonActive: {
@@ -543,7 +616,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   quantityInput: {
-    padding: spacing.lg,
+    padding: spacing.md,
   },
   totalSection: {
     flexDirection: 'row',
@@ -554,17 +627,28 @@ const styles = StyleSheet.create({
   totalLabel: {
     color: colors.textSecondary,
     fontSize: 14,
+    flexShrink: 0,
   },
   totalValue: {
     color: colors.text,
     fontSize: 20,
     fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: spacing.md,
+  },
+  totalValueError: {
+    color: colors.error,
   },
   buyingPower: {
     color: colors.textTertiary,
     fontSize: 12,
     textAlign: 'center',
-    marginBottom: spacing.lg,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  validationError: {
+    color: colors.error,
   },
   tradeButton: {
     marginTop: spacing.sm,

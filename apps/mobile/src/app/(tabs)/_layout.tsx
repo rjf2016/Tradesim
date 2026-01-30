@@ -2,6 +2,38 @@ import { Redirect, Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/stores/authStore';
 import { colors, spacing } from '@/theme';
+import { Platform, View, Text, StyleSheet } from 'react-native';
+
+const MAX_WIDTH = 512;
+
+function WebHeader({ title }: { title: string }) {
+  return (
+    <View style={styles.headerOuter}>
+      <View style={styles.headerInner}>
+        <Text style={styles.headerTitle}>{title}</Text>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  headerOuter: {
+    backgroundColor: colors.background,
+    width: '100%',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+  },
+  headerInner: {
+    width: '100%',
+    maxWidth: MAX_WIDTH,
+    paddingHorizontal: spacing.lg,
+  },
+  headerTitle: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: '700',
+  },
+});
 
 export default function TabsLayout() {
   const { isAuthenticated } = useAuthStore();
@@ -21,16 +53,15 @@ export default function TabsLayout() {
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textTertiary,
-        headerStyle: { backgroundColor: colors.background },
-        headerTintColor: colors.text,
+        headerShown: Platform.OS === 'web',
         headerShadowVisible: false,
-        headerTitleAlign: 'center',
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Portfolio',
+          header: () => <WebHeader title="Portfolio" />,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="pie-chart" size={size} color={color} />
           ),
@@ -40,6 +71,7 @@ export default function TabsLayout() {
         name="trade"
         options={{
           title: 'Trade',
+          header: () => <WebHeader title="Trade" />,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="swap-horizontal" size={size} color={color} />
           ),
@@ -49,6 +81,7 @@ export default function TabsLayout() {
         name="watchlist"
         options={{
           title: 'Watchlist',
+          header: () => <WebHeader title="Watchlist" />,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="star" size={size} color={color} />
           ),
@@ -57,6 +90,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="history"
         options={{
+          header: () => <WebHeader title="History" />,
           title: 'History',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="time" size={size} color={color} />

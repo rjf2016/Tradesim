@@ -2,8 +2,10 @@ import { useEffect, useRef } from 'react';
 import { View, Animated, StyleSheet, ViewStyle } from 'react-native';
 import { colors, spacing, borderRadius } from '@/theme';
 
+type Percent = `${number}%`;
+
 interface SkeletonProps {
-  width?: number | string;
+  width?: number | 'auto' | Percent;
   height?: number;
   borderRadius?: number;
   style?: ViewStyle;
@@ -143,7 +145,12 @@ export function SkeletonStockDetail() {
           <Skeleton width={100} height={14} />
           <Skeleton width={80} height={20} />
         </View>
-        <Skeleton width="100%" height={52} borderRadius={borderRadius.lg} style={styles.mtLg} />
+        <Skeleton
+          width="100%"
+          height={52}
+          borderRadius={borderRadius.lg}
+          style={styles.mtLg}
+        />
       </SkeletonCard>
     </View>
   );
@@ -151,7 +158,7 @@ export function SkeletonStockDetail() {
 
 const styles = StyleSheet.create({
   skeleton: {
-    backgroundColor: colors.backgroundSecondary,
+    backgroundColor: colors.backgroundMuted,
   },
   container: {
     padding: spacing.lg,
@@ -161,7 +168,7 @@ const styles = StyleSheet.create({
     gap: spacing.xl,
   },
   card: {
-    backgroundColor: colors.backgroundSecondary,
+    backgroundColor: colors.backgroundMuted,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     marginTop: spacing.md,
@@ -174,7 +181,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   stockRow: {
-    backgroundColor: colors.backgroundSecondary,
+    backgroundColor: colors.backgroundMuted,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     flexDirection: 'row',

@@ -11,7 +11,13 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { apiClient } from '@/services/api';
 import { useDebounce } from '@/hooks/useDebounce';
-import { Container, Input, StockRow, SkeletonStockList, EmptyState } from '@/components';
+import {
+  Container,
+  Input,
+  StockRow,
+  SkeletonStockList,
+  EmptyState,
+} from '@/components';
 import { colors, spacing, borderRadius } from '@/theme';
 
 export default function TradeScreen() {
@@ -53,7 +59,11 @@ export default function TradeScreen() {
         />
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
+            <Ionicons
+              name="close-circle"
+              size={20}
+              color={colors.textTertiary}
+            />
           </TouchableOpacity>
         )}
       </View>
@@ -105,6 +115,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.backgroundSecondary,
     borderRadius: borderRadius.lg,
     margin: spacing.lg,
+    marginBottom: spacing.xl,
     paddingHorizontal: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,

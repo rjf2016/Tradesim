@@ -14,3 +14,5 @@ export {
   SkeletonStockList,
   SkeletonStockDetail,
 } from './Skeleton';
+export { StockChart } from './StockChart';
+export type { TimePeriod } from './StockChart';

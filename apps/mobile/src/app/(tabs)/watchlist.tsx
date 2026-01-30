@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
@@ -6,15 +7,25 @@ import { Container, StockRow, SkeletonStockList, EmptyState } from '@/components
 import { colors, spacing } from '@/theme';
 
 export default function WatchlistScreen() {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const {
     data: watchlist,
     isLoading,
-    isFetching,
     refetch,
   } = useQuery({
     queryKey: ['watchlist'],
     queryFn: () => apiClient.getWatchlist(),
   });
+
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refetch]);
 
   if (isLoading) {
     return (
@@ -43,8 +54,8 @@ export default function WatchlistScreen() {
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
-            refreshing={isFetching && !isLoading}
-            onRefresh={refetch}
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
             tintColor={colors.primary}
           />
         }

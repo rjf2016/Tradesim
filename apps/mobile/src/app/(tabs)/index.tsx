@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, RefreshControl } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
@@ -13,15 +14,25 @@ import {
 import { colors, spacing } from '@/theme';
 
 export default function PortfolioScreen() {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const {
     data: portfolio,
     isLoading,
-    isFetching,
     refetch,
   } = useQuery({
     queryKey: ['portfolio'],
     queryFn: () => apiClient.getPortfolio(),
   });
+
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refetch]);
 
   const totalValue = portfolio
     ? portfolio.cashBalance +
@@ -49,8 +60,8 @@ export default function PortfolioScreen() {
       contentContainerStyle={styles.content}
       refreshControl={
         <RefreshControl
-          refreshing={isFetching && !isLoading}
-          onRefresh={refetch}
+          refreshing={isRefreshing}
+          onRefresh={onRefresh}
           tintColor={colors.primary}
         />
       }
@@ -67,7 +78,8 @@ export default function PortfolioScreen() {
             ]}
           >
             {totalGainLoss >= 0 ? '+' : ''}
-            {formatCurrency(totalGainLoss)} ({formatPercent(totalGainLossPercent)})
+            {formatCurrency(totalGainLoss)} (
+            {formatPercent(totalGainLossPercent)})
           </Text>
           <Text style={styles.allTime}>All Time</Text>
         </View>
