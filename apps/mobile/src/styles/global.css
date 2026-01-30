@@ -1,0 +1,48 @@
+/* Global styles for web platform */
+
+/* Custom scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333333;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #444444;
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #333333 transparent;
+}
+
+/* Remove default focus outline on inputs and replace with custom styling */
+input:focus,
+textarea:focus {
+  outline: none;
+}
+
+/* Remove default tap highlight on mobile web */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Ensure smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Prevent text selection on UI elements */
+button,
+[role="button"] {
+  user-select: none;
+}

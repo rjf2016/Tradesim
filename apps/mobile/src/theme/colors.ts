@@ -2,6 +2,7 @@ export const colors = {
   // Backgrounds
   background: '#0A0A0A',
   backgroundSecondary: '#1A1A1A',
+  backgroundMuted: '#141414',
 
   // Text
   text: '#FFFFFF',

@@ -78,7 +78,8 @@ export default function PortfolioScreen() {
             ]}
           >
             {totalGainLoss >= 0 ? '+' : ''}
-            {formatCurrency(totalGainLoss)} ({formatPercent(totalGainLossPercent)})
+            {formatCurrency(totalGainLoss)} (
+            {formatPercent(totalGainLossPercent)})
           </Text>
           <Text style={styles.allTime}>All Time</Text>
         </View>

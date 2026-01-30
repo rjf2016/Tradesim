@@ -55,7 +55,7 @@ export function Button({
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -79,11 +79,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   lg: {
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.xl,
   },
   disabled: {
-    opacity: 0.7,
+    opacity: 0.4,
   },
   text: {
     fontWeight: '600',
